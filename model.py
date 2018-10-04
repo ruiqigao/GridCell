@@ -2,15 +2,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
 from custom_ops import *
 import numpy as np
 from utils import generate_vel_list
-import math
 from itertools import combinations
 
 
-class GridCell_multidir(object):
+class GridCell(object):
     def __init__(self, FLAGS):
         self.beta1 = FLAGS.beta1
         self.place_dim = FLAGS.place_dim
@@ -145,11 +143,6 @@ class GridCell_multidir(object):
         else:
             grid_code_new = tf.matmul(M + tf.diag(tf.ones(self.grid_cell_dim)), tf.expand_dims(grid_code, -1))
         return tf.squeeze(grid_code_new)
-
-    # def motion_model(self, M, grid_code):
-
-    #
-    #     return tf.squeeze(grid_code_new)
 
     def localization_model(self, A, grid_code_, grid_cell_dim, pd_pt=False):
         grid_code = tf.reshape(grid_code_, [-1, grid_cell_dim])
