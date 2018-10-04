@@ -5,8 +5,7 @@ from __future__ import print_function
 import tensorflow as tf
 import numpy as np
 import time
-from gridcell import GridCell
-from gridcell_multidir import GridCell_multidir
+from model import GridCell_multidir
 import os
 from data_io import Data_Generator
 from utils import *
