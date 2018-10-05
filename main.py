@@ -5,7 +5,7 @@ from __future__ import print_function
 import tensorflow as tf
 import numpy as np
 import time
-from model import GridCell_multidir
+from model import GridCell
 import os
 from data_io import Data_Generator
 from utils import *
@@ -48,6 +48,11 @@ parser.add_argument('--lamda2', type=float, default=5000, help='Hyper parameter 
 parser.add_argument('--motion_type', type=str, default='continuous', help='True if in testing mode')
 parser.add_argument('--num_step', type=int, default=1, help='Number of steps in path integral')
 parser.add_argument('--save_memory', type=bool, default=False, help='True if in testing mode')
+
+# parameters for single block tuning
+parser.add_argument('--single_block', type=bool, default=False, help='True if in testing mode')
+parser.add_argument('--alpha', type=float, default=72.0, help='scale parameter used in single block scenario')
+
 
 # utils train
 parser.add_argument('--output_dir', type=str, default='test', help='The output directory for saving results')
@@ -162,13 +167,13 @@ def train(model, sess, output_dir):
                 else place_seq_val2['vel_idx'][start_idx: end_idx]
             loss_val = sess.run(model.loss, feed_dict=feed_dict)
             end_time = time.time()
-            print('#{:s} Epoch #{:d}, train loss1: {:.4f}, train loss2: {:.4f}, reg: {:.4f}, val loss: {:.4f} time: {:.2f}s'
-                  .format(output_dir, epoch, loss1_avg, loss2_avg, reg_avg, loss_val, end_time - start_time))
+            print('#{:s} Epoch #{:d}, train loss1: {:.4f}, train loss2: {:.4f}, train loss3: {:.4f}, reg: {:.4f}, val loss: {:.4f} time: {:.2f}s'
+                  .format(output_dir, epoch, loss1_avg, loss2_avg, loss3_avg, reg_avg, loss_val, end_time - start_time))
             # print('dp1: {:.4f}, dp2: {:.4f}'.format(np.sum(dp1), np.sum(dp2)))
             start_time = time.time()
 
-        syn_dir = os.path.join(FLAGS.output_dir, 'syn')
-        syn_path_dir = os.path.join(FLAGS.output_dir, 'syn_path')
+        syn_dir = os.path.join(output_dir, 'syn')
+        syn_path_dir = os.path.join(output_dir, 'syn_path')
         if epoch == 0 or (epoch + 1) % FLAGS.log_step == 0 or epoch == FLAGS.num_epochs - 1:
             saver.save(sess, "%s/%s" % (model_dir, 'model.ckpt'), global_step=epoch)
             if not tf.gfile.Exists(syn_dir):
@@ -269,6 +274,8 @@ def test_path_integral(model, sess, place_seq_test, visualize=False, test_dir=No
 
 def test(model, sess, test_dir, epoch=0, final_epoch=False, result_dir=None):
     weights_A_value = sess.run(model.weights_A)
+    if not model.single_block:
+        alpha = sess.run(model.alpha)
     if not tf.gfile.Exists(test_dir):
         tf.gfile.MakeDirs(test_dir)
     np.save(os.path.join(test_dir, 'weights.npy'), weights_A_value)
@@ -290,7 +297,7 @@ def test(model, sess, test_dir, epoch=0, final_epoch=False, result_dir=None):
 
 
 def main(_):
-    model = GridCell_multidir(FLAGS)
+    model = GridCell(FLAGS)
 
     with tf.Session() as sess:
         if FLAGS.test:
@@ -298,9 +305,9 @@ def main(_):
             assert FLAGS.ckpt is not None, 'no checkpoint provided.'
             saver = tf.train.Saver()
             sess.run(tf.global_variables_initializer())
-            saver.restore(sess, os.path.join(FLAGS.output_dir, 'model', FLAGS.ckpt))
-            print('Loading checkpoint {}.'.format(os.path.join(FLAGS.output_dir, 'model', FLAGS.ckpt)))
-            test_dir = os.path.join(FLAGS.output_dir, 'test')
+            saver.restore(sess, os.path.join('output', FLAGS.output_dir, 'model', FLAGS.ckpt))
+            print('Loading checkpoint {}.'.format(os.path.join('output', FLAGS.output_dir, 'model', FLAGS.ckpt)))
+            test_dir = os.path.join('output', FLAGS.output_dir, 'test')
             test(model, sess, test_dir)
         elif FLAGS.test_path:
             model.path_integral(FLAGS.test_num, project_to_point=FLAGS.project_to_point)
@@ -308,10 +315,10 @@ def main(_):
             assert FLAGS.ckpt is not None, 'no checkpoint provided.'
             saver = tf.train.Saver()
             sess.run(tf.global_variables_initializer())
-            saver.restore(sess, os.path.join(FLAGS.output_dir, 'model', FLAGS.ckpt))
-            print('Loading checkpoint {}.'.format(os.path.join(FLAGS.output_dir, 'model', FLAGS.ckpt)))
+            saver.restore(sess, os.path.join('output', FLAGS.output_dir, 'model', FLAGS.ckpt))
+            print('Loading checkpoint {}.'.format(os.path.join('output', FLAGS.output_dir, 'model', FLAGS.ckpt)))
 
-            test_dir = os.path.join(FLAGS.output_dir, 'test')
+            test_dir = os.path.join('output', FLAGS.output_dir, 'test')
             data_generator_test = Data_Generator(max=FLAGS.place_size, num_interval=model.num_interval)
             # place_seq_test = data_generator_test.generate(1, velocity=model.velocity2, num_step=FLAGS.test_num, dtype=2,
             #                                          test=True, visualize=True)
@@ -327,7 +334,7 @@ def main(_):
                 with open(FLAGS.log_file, "a") as f:
                     print('%s %02f' % (FLAGS.output_dir, err), file=f)
         else:
-            train(model, sess, FLAGS.output_dir)
+            train(model, sess, os.path.join('output', FLAGS.output_dir))
 
 
 if __name__ == '__main__':

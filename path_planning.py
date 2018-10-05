@@ -3,7 +3,7 @@ import numpy as np
 import os
 import argparse
 import math
-from gridcell_multidir import GridCell_multidir
+from model import GridCell
 from custom_ops import block_diagonal
 from data_io import Data_Generator
 from matplotlib import pyplot as plt

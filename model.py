@@ -28,14 +28,20 @@ class GridCell(object):
         self.num_step = FLAGS.num_step
         self.GandE = FLAGS.GandE
         self.save_memory = FLAGS.save_memory
-
+        self.single_block = FLAGS.single_block
         self.lr = FLAGS.lr
 
         # initialize A weights
-        A_initial = np.random.normal(scale=0.01, size=[self.num_interval, self.num_interval, self.grid_cell_dim])
+        A_initial = np.random.normal(scale=0.001, size=[self.num_interval, self.num_interval, self.grid_cell_dim])
         self.weights_A = tf.get_variable('A', initializer=tf.convert_to_tensor(A_initial, dtype=tf.float32))
         if self.motion_type == 'discrete':
             self.weights_M = construct_block_diagonal_weights(self.num_vel2, self.num_group, self.block_size)
+        # initialized alpha weights
+        if self.single_block:
+            self.alpha = [FLAGS.alpha]
+        else:
+            alpha_initial = np.random.normal(scale=0.001, size=[self.num_group])
+            self.alpha = tf.get_variable('alpha', initializer=tf.convert_to_tensor(alpha_initial, dtype=tf.float32))
 
     def build_model(self):
         # set placeholder
@@ -60,7 +66,7 @@ class GridCell(object):
         self.dp2 = (1.0 - self.GandE) * tf.exp(- self.vel1 / 0.3)
         displacement = self.dp1 + self.dp2
 
-        self.loss1 = tf.reduce_sum(tf.square(tf.reduce_sum(grid_code_before1 * grid_code_after1, axis=1) - displacement))
+        self.loss1 = tf.reduce_sum((tf.reduce_sum(grid_code_before1 * grid_code_after1, axis=1) - displacement) ** 2)
 
         # compute loss2
         # motion_init = self.construct_motion_matrix(self.vel2[:, 0])
@@ -72,7 +78,7 @@ class GridCell(object):
             loss2 = loss2 + tf.reduce_sum(tf.square(grid_code - grid_code_seq2[:, step+1]))
 
         # self.loss2 = loss2
-        self.loss2 = loss2
+        self.loss2 = self.lamda * loss2
         grid_code_end_pd = grid_code
 
         self.place_end_pd, _ = self.localization_model(self.weights_A, grid_code_end_pd, self.grid_cell_dim)
@@ -80,7 +86,18 @@ class GridCell(object):
         self.place_end_infer, _ = self.localization_model(self.weights_A, grid_code_seq2[:, -1], self.grid_cell_dim)
         self.place_start_gt, self.place_end_gt = self.place_seq2[:, 0], self.place_seq2[:, -1]
 
-        self.loss3 = tf.constant(0.0)
+        # compute loss 3
+        loss3 = tf.constant(0.0)
+        for i in range(self.num_step):
+            grid_code_inner_pd = grid_code_seq2[:, i] * grid_code_seq2[:, i+1]
+            grid_code_inner_pd_gp = tf.reduce_sum(
+                tf.reshape(grid_code_inner_pd, [-1, self.num_group, self.block_size]), axis=-1)
+
+            vel2_norm = tf.reduce_sum(self.vel2[:, i] ** 2, axis=-1)
+            dp_gp = 1.0 / self.num_group - \
+                    tf.matmul(tf.expand_dims(vel2_norm, axis=1), tf.expand_dims(self.alpha, axis=0))
+            loss3 = loss3 + tf.reduce_sum((grid_code_inner_pd_gp - dp_gp) ** 2)
+        self.loss3 = 3.0 * loss3
         self.loss4 = tf.reduce_sum(tf.abs(tf.reduce_sum(self.weights_A ** 2, axis=2) - 1.0))
 
         # compute total loss
@@ -90,7 +107,10 @@ class GridCell(object):
         A_reshape = tf.reshape(A_reshape, [self.place_dim, self.num_group, self.block_size])
         idx = np.asarray(list(combinations(np.arange(self.block_size), 2)))
 
-        self.loss = self.loss1 + self.lamda * self.loss2 + self.reg
+        if self.single_block:
+            self.loss = self.loss2 + self.reg + self.loss3
+        else:
+            self.loss = self.loss1 + self.loss2 + self.reg + self.loss3
         self.loss_mean, self.loss_update = tf.contrib.metrics.streaming_mean(self.loss)
 
         # optim = tf.train.MomentumOptimizer(self.lr, 0.9)
@@ -110,8 +130,9 @@ class GridCell(object):
         self.norm_grads = tf.assign(self.weights_A, tf.nn.l2_normalize(self.weights_A, axis=2))
 
     def get_grid_code(self, place_):
-        grid_code = tf.squeeze(tf.contrib.resampler.resampler(tf.transpose(
-            tf.expand_dims(self.weights_A, axis=0), perm=[0, 2, 1, 3]), tf.expand_dims(place_, axis=0)))
+        grid_code = tf.contrib.resampler.resampler(tf.transpose(
+            tf.expand_dims(self.weights_A, axis=0), perm=[0, 2, 1, 3]), tf.expand_dims(place_, axis=0))
+        grid_code = tf.squeeze(grid_code)
         return grid_code
 
     def construct_motion_matrix(self, vel_, reuse=None):
