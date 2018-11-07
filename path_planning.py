@@ -135,11 +135,6 @@ def perform_path_planning(planning_model, sess, start, target, max_step=40,
 
     for tt in range(num_test):
         start_value, target_value = start[tt], target[tt]
-        # Sample destination and starting point
-        # target_value = np.random.choice(planning_model.model.num_interval - 4, [100, 2]) + 2
-        # start_value = np.random.choice(planning_model.model.num_interval - 4, [100, 2]) + 2
-        # select_idx = np.where(np.sqrt(np.sum((target_value - start_value) ** 2, axis=1)) > 20)
-        # target_value, start_value = target_value[select_idx[0][0]], start_value[select_idx[0][0]]
 
         # Do path planning
         feed_dict = {planning_model.start: start_value, planning_model.target: target_value}
@@ -225,7 +220,7 @@ def main(_):
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = FLAGS.gpu
 
-    model = GridCell_multidir(FLAGS)
+    model = GridCell(FLAGS)
     planning_model = Path_planning(model, FLAGS.max_step)
 
     with tf.Session() as sess:

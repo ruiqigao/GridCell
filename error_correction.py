@@ -380,7 +380,8 @@ def main(_):
                 saver.restore(sess, ckpt_file)
 
                 data_generator_test = Data_Generator(max=FLAGS.place_size, num_interval=model.num_interval)
-                place_pair_test = data_generator_test.generate(FLAGS.num_test, velocity=model.velocity2, num_step=FLAGS.integral_step, dtype=2,
+                place_pair_test = data_generator_test.generate(FLAGS.num_test, max_vel=model.max_vel2,
+                                                               min_vel=model.min_vel2, num_step=FLAGS.integral_step, dtype=2,
                                                                test=True)
                 err = test_path_integral(error_correction_model, sess, place_pair_test, visualize=True, test_dir=test_dir)
                 print('%s %f' % (FLAGS.output_dir, np.mean(err)))
@@ -391,9 +392,9 @@ def main(_):
                 saver.restore(sess, ckpt_file)
 
                 data_generator_test = Data_Generator(max=FLAGS.place_size, num_interval=model.num_interval)
-                place_pair_test = data_generator_test.generate(FLAGS.num_test, velocity=model.velocity2,
-                                                               num_step=FLAGS.integral_step, dtype=2,
-                                                               test=True)
+                place_pair_test = data_generator_test.generate(FLAGS.num_test, max_vel=model.max_vel2,
+                                                               min_vel=model.min_vel2, num_step=FLAGS.integral_step,
+                                                               dtype=2, test=True)
                 err = test_path_integral(error_correction_model, sess, place_pair_test, visualize=True,
                                          test_dir=test_dir)
 

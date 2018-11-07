@@ -1,11 +1,6 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from custom_ops import *
 import numpy as np
 from utils import generate_vel_list
-from itertools import combinations
 
 
 class GridCell(object):
@@ -17,18 +12,19 @@ class GridCell(object):
         self.num_group = FLAGS.num_group
         self.grid_cell_dim = int(self.num_group * self.block_size)
         self.sigma = np.asarray(FLAGS.sigma, dtype=np.float32)
+        self.single_block = FLAGS.single_block
         assert self.num_group * self.block_size == self.grid_cell_dim
         assert self.num_interval * self.num_interval == self.place_dim
 
-        self.velocity1 = generate_vel_list(FLAGS.max_vel1, FLAGS.min_vel1)
-        self.velocity2 = generate_vel_list(FLAGS.max_vel2, FLAGS.min_vel2)
+        self.max_vel2 = np.sqrt(1.5 / FLAGS.alpha) * (self.num_interval - 1) if self.single_block else FLAGS.max_vel2
+        self.min_vel2 = FLAGS.min_vel2
+        self.velocity2 = generate_vel_list(self.max_vel2, FLAGS.min_vel2)
         self.num_vel2 = len(self.velocity2)
         self.lamda2 = FLAGS.lamda2
         self.motion_type = FLAGS.motion_type
         self.num_step = FLAGS.num_step
         self.GandE = FLAGS.GandE
         self.save_memory = FLAGS.save_memory
-        self.single_block = FLAGS.single_block
         self.lr = FLAGS.lr
 
         # initialize A weights
@@ -97,26 +93,22 @@ class GridCell(object):
             dp_gp = 1.0 / self.num_group - \
                     tf.matmul(tf.expand_dims(vel2_norm, axis=1), tf.expand_dims(self.alpha, axis=0))
             loss3 = loss3 + tf.reduce_sum((grid_code_inner_pd_gp - dp_gp) ** 2)
-        self.loss3 = 3.0 * loss3
+        self.loss3 = 5.0 * loss3
         self.loss4 = tf.reduce_sum(tf.abs(tf.reduce_sum(self.weights_A ** 2, axis=2) - 1.0))
 
         # compute total loss
         A_reshape = tf.reshape(self.weights_A, [self.place_dim, self.grid_cell_dim])
         self.reg = self.lamda2 * tf.reduce_sum((tf.reduce_mean(A_reshape ** 2, axis=0) - 1.0 / self.grid_cell_dim) ** 2)
 
-        A_reshape = tf.reshape(A_reshape, [self.place_dim, self.num_group, self.block_size])
-        idx = np.asarray(list(combinations(np.arange(self.block_size), 2)))
-
         if self.single_block:
-            self.loss = self.loss2 + self.reg + self.loss3
+            self.loss = self.loss2 + self.loss3 + self.reg
         else:
-            self.loss = self.loss1 + self.loss2 + self.reg + self.loss3
+            self.loss = self.loss1 + self.loss2 + self.reg  # + self.loss3
         self.loss_mean, self.loss_update = tf.contrib.metrics.streaming_mean(self.loss)
 
         # optim = tf.train.MomentumOptimizer(self.lr, 0.9)
         optim = tf.train.AdamOptimizer(self.lr, beta1=self.beta1)
         trainable_vars = tf.trainable_variables()
-
         self.apply_grads = optim.minimize(self.loss, var_list=trainable_vars)
 
         tf.summary.scalar('loss', self.loss)
@@ -126,8 +118,8 @@ class GridCell(object):
         tf.summary.scalar('loss4', self.loss4)
 
         self.summary_op = tf.summary.merge_all()
-
         self.norm_grads = tf.assign(self.weights_A, tf.nn.l2_normalize(self.weights_A, axis=2))
+        self.I2 = tf.matmul(A_reshape, A_reshape, transpose_b=True)
 
     def get_grid_code(self, place_):
         grid_code = tf.contrib.resampler.resampler(tf.transpose(

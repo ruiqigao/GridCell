@@ -3,7 +3,7 @@ import numpy as np
 import os
 import argparse
 import math
-from gridcell import GridCell
+from model import GridCell
 from custom_ops import block_diagonal
 from data_io import Data_Generator
 from matplotlib import pyplot as plt
@@ -336,7 +336,7 @@ def main(_):
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     # os.environ["CUDA_VISIBLE_DEVICES"] = FLAGS.gpu
 
-    model = GridCell_multidir(FLAGS)
+    model = GridCell(FLAGS)
     planning_model = Path_planning(model, max_step=FLAGS.max_step, obstacle_type=FLAGS.obstacle_type)
     planning_model.path_planning(FLAGS.planning_step)
 
