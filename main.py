@@ -23,8 +23,8 @@ parser = argparse.ArgumentParser()
 
 # training parameters
 parser.add_argument('--batch_size', type=int, default=30000, help='Batch size of training images')
-parser.add_argument('--num_epochs', type=int, default=6000, help='Number of epochs to train')
-parser.add_argument('--lr', type=float, default=0.03, help='Initial learning rate for descriptor')
+parser.add_argument('--num_epochs', type=int, default=8000, help='Number of epochs to train')
+parser.add_argument('--lr', type=float, default=0.003, help='Initial learning rate for descriptor')
 parser.add_argument('--beta1', type=float, default=0.9, help='Beta1 in Adam optimizer')
 
 # simulated data parameters
@@ -33,6 +33,7 @@ parser.add_argument('--max_vel2', type=float, default=3, help='maximum  of veloc
 parser.add_argument('--min_vel2', type=float, default=0, help='minimum of velocity in loss2, measure in grids')
 parser.add_argument('--num_data', type=int, default=30000, help='Number of simulated data points')
 parser.add_argument('--dtype1', type=int, default=1, help='type of loss1')
+parser.add_argument('--shape', type=str, default='square', help='Shape of the area')
 
 # model parameters
 parser.add_argument('--sigma', metavar='N', type=float, nargs='+', default=[0.08], help='sd of gaussian kernel')
@@ -43,6 +44,7 @@ parser.add_argument('--iter', type=int, default=0, help='Number of iter')
 parser.add_argument('--lamda', type=float, default=0.1, help='Hyper parameter to balance two loss terms')
 parser.add_argument('--GandE', type=float, default=1.0, help='Hyper parameter to balance two loss terms')
 parser.add_argument('--lamda2', type=float, default=5000, help='Hyper parameter to balance two loss terms')
+parser.add_argument('--lamda3', type=float, default=8.0, help='Hyper parameter to balance two loss terms')
 parser.add_argument('--motion_type', type=str, default='continuous', help='True if in testing mode')
 parser.add_argument('--num_step', type=int, default=1, help='Number of steps in path integral')
 parser.add_argument('--save_memory', type=bool, default=False, help='True if in testing mode')
@@ -59,10 +61,10 @@ parser.add_argument('--log_step', type=int, default=500, help='Number of mini ba
 
 # utils test
 parser.add_argument('--mode', type=str, default='0', help='0: training / 1: visualizing /  2: path integral')
-parser.add_argument('--test_num', type=int, default=30, help='Number of testing steps used in path integral')
+parser.add_argument('--test_num', type=int, default=5, help='Number of testing steps used in path integral')
 parser.add_argument('--project_to_point', type=bool, default=False, help='True if in testing path integral mode')
 parser.add_argument('--ckpt', type=str, default='model.ckpt-5999', help='Checkpoint path to load')
-parser.add_argument('--gpu', type=str, default='1', help='Which gpu to use')
+parser.add_argument('--gpu', type=str, default='0', help='Which gpu to use')
 
 FLAGS = parser.parse_args()
 
@@ -104,7 +106,7 @@ def train(model, sess, output_dir):
     with open(model_dir + '/graph.proto', 'w') as f:
         f.write(str(tf.get_default_graph().as_graph_def()))
 
-    data_generator = Data_Generator(max=FLAGS.place_size, num_interval=model.num_interval)
+    data_generator = Data_Generator(max=FLAGS.place_size, num_interval=model.num_interval, shape=model.shape)
 
     # train
     start_time = time.time()
@@ -112,9 +114,21 @@ def train(model, sess, output_dir):
         if epoch < FLAGS.iter:
            lamda_list[epoch] = 0
         place_pair1 = data_generator.generate(FLAGS.num_data, dtype=FLAGS.dtype1)
-        # place_pair1 = data_generator.generate(FLAGS.num_data, max_vel=model.max_vel1, num_step=1, dtype=2)
         place_seq2 = data_generator.generate(FLAGS.num_data, max_vel=model.max_vel2, min_vel=model.min_vel2,
-                                             num_step=model.num_step, dtype=2)
+                                             num_step=model.num_step, dtype=2, motion_type=model.motion_type)
+        alpha = sess.run(model.alpha)
+        place_seq3 = []
+        if epoch < 0:
+            place_seq3 = data_generator.generate(FLAGS.num_data, max_vel=model.max_vel2, num_step=1, dtype=2)['seq']
+            place_seq3 = np.tile(np.expand_dims(place_seq3, axis=1), [1, model.num_group, 1, 1])
+        else:
+            for block_idx in range(model.num_group):
+                # max_vel = 3.0
+                max_vel = min(np.sqrt(1.5 / alpha[block_idx]) / model.interval_length, 10)
+                place_seqs = data_generator.generate(FLAGS.num_data, max_vel=max_vel, num_step=1, dtype=2)['seq']
+                assert len(place_seqs) == FLAGS.num_data
+                place_seq3.append(place_seqs)
+            place_seq3 = np.stack(place_seq3, axis=1)
 
         loss_avg, loss1_avg, loss2_avg, reg_avg, loss3_avg, loss4_avg = [], [], [], [], [], []
         for minibatch in range(num_batch):
@@ -132,6 +146,7 @@ def train(model, sess, output_dir):
                          model.place_after1: place_pair1['after'][start_idx: end_idx],
                          model.vel1: place_pair1['vel'][start_idx: end_idx],
                          model.place_seq2: place_seq2['seq'][start_idx: end_idx],
+                         model.place_seq3: place_seq3[start_idx: end_idx],
                          model.lamda: lamda_list[epoch]})
 
             feed_dict[model.vel2] = place_seq2['vel'][start_idx: end_idx] if model.motion_type == 'continuous' \
@@ -143,7 +158,7 @@ def train(model, sess, output_dir):
                                                                      model.apply_grads], feed_dict=feed_dict)[:9]
 
             # regularize weights
-            if epoch > 4000 and not model.single_block:
+            if epoch > 8000 and not model.single_block:
                 sess.run(model.norm_grads)
 
             loss_avg.append(loss)
@@ -164,6 +179,7 @@ def train(model, sess, output_dir):
                                                                             np.mean(np.asarray(reg_avg))
             I2 = sess.run(model.I2)
             end_time = time.time()
+            print(alpha)
             print('#{:s} Epoch #{:d}, loss: {:.4f}, loss1: {:.4f}, loss2: {:.4f}, loss3: {:.4f}, reg: {:.4f}, time: {:.2f}s'
                   .format(output_dir, epoch, loss_avg, loss1_avg, loss2_avg, loss3_avg, reg_avg, end_time - start_time))
             print('max inner product: %02f, min inner product: %02f' % (I2.max(), I2.min()))
@@ -195,18 +211,18 @@ def train(model, sess, output_dir):
 
             visualize(model, sess, syn_dir, epoch, final_epoch=True, result_dir='./tune_results')
 
-            place_seq_test = data_generator.generate(1, max_vel=model.max_vel2, min_vel=model.min_vel2,
-                                                     num_step=FLAGS.test_num, dtype=2, test=True)
-            test_path_integral(model, sess, place_seq_test, visualize=True, test_dir=syn_path_dir, epoch=epoch)
-
-            place_seq_test = data_generator.generate(100, max_vel=model.max_vel2, min_vel=model.min_vel2,
-                                                     num_step=FLAGS.test_num, dtype=2, test=True)
-            err = test_path_integral(model, sess, place_seq_test)
-            err = np.mean(err)
-            print('%s %d epoch, path integral mse: %02f' % (output_dir, epoch, err))
-            if FLAGS.log_file is not None:
-                with open(FLAGS.log_file, "a") as f:
-                    print('%s %d %02f' % (output_dir, epoch, err), file=f)
+            # place_seq_test = data_generator.generate(1, max_vel=model.max_vel2, min_vel=model.min_vel2,
+            #                                          num_step=FLAGS.test_num, dtype=2, test=True)
+            # test_path_integral(model, sess, place_seq_test, visualize=True, test_dir=syn_path_dir, epoch=epoch)
+            #
+            # place_seq_test = data_generator.generate(100, max_vel=model.max_vel2, min_vel=model.min_vel2,
+            #                                          num_step=FLAGS.test_num, dtype=2, test=True)
+            # err = test_path_integral(model, sess, place_seq_test)
+            # err = np.mean(err)
+            # print('%s %d epoch, path integral mse: %02f' % (output_dir, epoch, err))
+            # if FLAGS.log_file is not None:
+            #     with open(FLAGS.log_file, "a") as f:
+            #         print('%s %d %02f' % (output_dir, epoch, err), file=f)
 
 
 def test_path_integral(model, sess, place_seq_test, visualize=False, test_dir=None, epoch=None):
@@ -221,7 +237,7 @@ def test_path_integral(model, sess, place_seq_test, visualize=False, test_dir=No
                      model.vel2_test: place_seq_test['vel_idx'][i]}
         place_seq_pd_pt_value, place_seq_predict_value, place_seq_predict_gp_value = \
             sess.run([model.place_seq_pd_pt, model.place_seq_pd, model.place_seq_pd_gp], feed_dict=feed_dict)
-        err[i] = np.sqrt(np.sum((place_seq_test['seq'][i, 1:] - place_seq_pd_pt_value) ** 2, axis=1))
+        err[i] = np.sqrt(np.sum((place_seq_test['seq'][i, 1:] - place_seq_pd_pt_value[1:]) ** 2, axis=1))
 
         if place_seq_predict_value.min() < place_min:
             place_min = place_seq_predict_value.min()
@@ -238,13 +254,13 @@ def test_path_integral(model, sess, place_seq_test, visualize=False, test_dir=No
 
             cmap = cm.get_cmap('rainbow', 1000)
             num_gp_sqrt = max(int(np.ceil(np.sqrt(model.num_group))), 3)
-            place_seq_pd_pt_value = np.vstack((place_seq_test['seq'][0, 0], place_seq_pd_pt_value[:test_num]))
-            for j in range(test_num):
+            # place_seq_pd_pt_value = np.vstack((place_seq_test['seq'][0, 0], place_seq_pd_pt_value[:test_num]))
+            for j in range(test_num + 1):
                 plt.figure(figsize=(num_gp_sqrt, num_gp_sqrt + 1))
                 plt.subplot(num_gp_sqrt + 1, num_gp_sqrt, 1)
                 draw_path_to_target(model.num_interval, place_seq_test['seq'][0, :j+1])
                 plt.subplot(num_gp_sqrt + 1, num_gp_sqrt, 2)
-                draw_path_to_target(model.num_interval, np.vstack((place_seq_test['seq'][0, 0], place_seq_pd_pt_value[:j])))
+                draw_path_to_target(model.num_interval, place_seq_pd_pt_value[:j+1])
                 plt.subplot(num_gp_sqrt + 1, num_gp_sqrt, 3)
                 draw_heatmap_2D(place_seq_predict_value[j], vmin=0, vmax=1)
                 for gp in range(model.num_group):
@@ -267,11 +283,17 @@ def test_path_integral(model, sess, place_seq_test, visualize=False, test_dir=No
     return err
 
 
-def visualize(model, sess, test_dir, epoch=0, final_epoch=False, result_dir=None):
+def visualize(model, sess, test_dir, epoch=0, final_epoch=False, result_dir=None, gridness_score=False):
     weights_A_value = sess.run(model.weights_A)
+    alpha_value = sess.run(model.alpha)
+    order = np.argsort(alpha_value)
+    print(alpha_value[order])
     if not tf.gfile.Exists(test_dir):
         tf.gfile.MakeDirs(test_dir)
-    np.save(os.path.join(test_dir, 'weights.npy'), weights_A_value)
+    weights_A_value_t = np.reshape(weights_A_value, [model.num_interval, model.num_interval, model.num_group, model.block_size])
+    weights_A_value_t = weights_A_value_t[:, :, order]
+    weights_A_value = np.reshape(weights_A_value_t, [model.num_interval, model.num_interval, model.grid_cell_dim])
+    np.save(os.path.join(test_dir, 'weights_' + str(epoch) + '.npy'), weights_A_value)
 
     # print out A
     weights_A_value_transform = np.swapaxes(np.swapaxes(weights_A_value, 0, 2), 1, 2)
@@ -281,7 +303,7 @@ def visualize(model, sess, test_dir, epoch=0, final_epoch=False, result_dir=None
     for i in range(len(weights_A_value_transform)):
         weight_to_draw = weights_A_value_transform[i]
         plt.subplot(nrow, ncol, i + 1)
-        draw_heatmap_2D(weight_to_draw, vmin=weight_to_draw.min(), vmax=weight_to_draw.max())
+        draw_heatmap_2D(weight_to_draw, shape=model.shape)
     plt.savefig(os.path.join(test_dir, 'weights_' + str(epoch) + '.png'))
     if final_epoch:
         if not os.path.exists(result_dir):
@@ -313,13 +335,15 @@ def main(_):
             print('Loading checkpoint {}.'.format(os.path.join('output', FLAGS.output_dir, 'model', FLAGS.ckpt)))
 
             test_dir = os.path.join('output', FLAGS.output_dir, 'test')
-            data_generator_test = Data_Generator(max=FLAGS.place_size, num_interval=model.num_interval)
+            if not tf.gfile.Exists(test_dir):
+                tf.gfile.MakeDirs(test_dir)
+            data_generator_test = Data_Generator(max=FLAGS.place_size, num_interval=model.num_interval, shape=model.shape)
             # place_seq_test = data_generator_test.generate(1, velocity=model.velocity2, num_step=FLAGS.test_num, dtype=2,
             #                                          test=True, visualize=True)
             # test_path_integral(model, sess, place_seq_test, visualize=True, test_dir=test_dir)
-            place_pair_test = data_generator_test.generate(1000, max_vel=model.max_vel2, min_vel=model.min_vel2,
-                                                           num_step=FLAGS.test_num, dtype=2, test=True)
-            err = test_path_integral(model, sess, place_pair_test)
+            place_pair_test = data_generator_test.generate(1, max_vel=model.max_vel2, min_vel=model.min_vel2,
+                                                           num_step=FLAGS.test_num, dtype=2, test=True, visualize=True)
+            err = test_path_integral(model, sess, place_pair_test, visualize=True, test_dir=test_dir)
             if FLAGS.err_dir is not None:
                 np.save(FLAGS.err_dir, err)
 

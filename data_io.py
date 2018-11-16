@@ -23,64 +23,88 @@ class Data_Generator(object):
     Velocity is fixed.
     Place vector is generated from a Gaussian distribution.
     """
-    def __init__(self, num_interval=1000, min=0, max=1):
+    def __init__(self, num_interval=1000, min=0, max=1, shape="square"):
         """
         Sigma is the variance in the Gaussian distribution.
         """
         self.num_interval = num_interval
         self.min, self.max = min, max
         self.interval_length = (self.max - self.min) / (self.num_interval - 1)
+        self.shape = shape
 
-    def generate(self, num_data, max_vel=3, min_vel=0, num_step=1, dtype=2, test=False, visualize=False):
+    def generate(self, num_data, max_vel=3, min_vel=0, num_step=1, dtype=2, test=False, visualize=False, motion_type='continuous'):
         if dtype == 1:
             place_pair = self.generate_two_dim_multi_type1(num_data)
         elif dtype == 2:
             place_pair = self.generate_two_dim_multi_type2(num_data, max_vel, min_vel, num_step,
-                                                           test=test, visualize=visualize)
+                                                           test=test, visualize=visualize, motion_type=motion_type)
         else:
             raise NotImplementedError
 
         return place_pair
 
     def generate_two_dim_multi_type1(self, num_data):
-        mu_before = np.random.random(size=[num_data, 2]) * (self.num_interval - 1)
-        mu_after = np.random.random(size=[num_data, 2]) * (self.num_interval - 1)
-        # mu_before = np.random.choice(self.num_interval, size=[num_data, 2])
-        # mu_after = np.random.choice(self.num_interval, size=[num_data, 2])
+        if self.shape == "square":
+            mu_before = np.random.random(size=[num_data, 2]) * (self.num_interval - 1)
+            mu_after = np.random.random(size=[num_data, 2]) * (self.num_interval - 1)
+        elif self.shape == "circle":
+            mu_seq = np.random.random(size=[num_data * 3, 2])
+            select_idx = np.where(np.sqrt((mu_seq[:, 0] - 0.5) ** 2 + (mu_seq[:, 1] - 0.5) ** 2) < 0.5)[0]
+            mu_seq = mu_seq[select_idx[:num_data * 2]]
+            mu_before = mu_seq[:num_data] * (self.num_interval - 1)
+            mu_after = mu_seq[num_data:] * (self.num_interval - 1)
+        elif self.shape == "triangle":
+            mu_seq = np.random.random(size=[int(num_data * 4.2), 2])
+            x, y = mu_seq[:, 0], mu_seq[:, 1]
+            select_idx = np.where((x + 2 * y > 1) * (-x + 2 * y < 1))[0]
+            mu_seq = mu_seq[select_idx[:num_data * 2]]
+            mu_before = mu_seq[:num_data] * (self.num_interval - 1)
+            mu_after = mu_seq[num_data:] * (self.num_interval - 1)
+        else:
+            raise NotImplementedError
 
         vel = np.sqrt(np.sum((mu_after - mu_before) ** 2, axis=1)) * self.interval_length
-
         place_pair = {'before': mu_before, 'after': mu_after, 'vel': vel}
-
+        assert len(mu_before) == num_data
         return place_pair
 
-    def generate_two_dim_multi_type2(self, num_data, max_vel, min_vel, num_step, test=False, visualize=False):
+    def generate_two_dim_multi_type2(self, num_data, max_vel, min_vel, num_step, motion_type, test=False, visualize=False):
         """sample discretized motions and corresponding place pairs"""
-        # if not test:
-        #     velocity = generate_vel_list(max_vel, 1.0)
-        #     num_vel = len(velocity)
-        #     if pow(num_vel, num_step) < num_data:
-        #                     vel_list = np.asarray(list(itertools.product(np.arange(num_vel), repeat=num_step)))
-        #                     num_vel_list = len(vel_list)
-        #
-        #                     div, rem = num_data // num_vel_list, num_data % num_vel_list
-        #                     vel_idx = np.vstack((np.tile(vel_list, [div, 1]), vel_list[np.random.choice(num_vel_list, size=rem)]))
-        #                     np.random.shuffle(vel_idx)
-        #     else:
-        #         vel_idx = np.random.choice(num_vel, size=[num_data, num_step])
-        #
-        #     vel_grid = np.take(velocity, vel_idx, axis=0)
-        #     vel = vel_grid * self.interval_length
-        #
-        #     vel_grid_cumsum = np.cumsum(vel_grid, axis=1)
-        #     mu_max = np.fmin(self.num_interval, np.min(self.num_interval - vel_grid_cumsum, axis=1))
-        #     mu_min = np.fmax(0, np.max(-vel_grid_cumsum, axis=1))
-        #     mu_start = np.random.sample(size=[num_data, 2])
-        #     mu_start = np.expand_dims(np.round(mu_start * (mu_max - mu_min) + mu_min - 0.5), axis=1)
-        #     mu_seq = np.concatenate((mu_start, mu_start + vel_grid_cumsum), axis=1)
-        if not test:
-            theta = np.random.random(size=(num_data, num_step)) * 2 * np.pi - np.pi
-            length = np.sqrt(np.random.random(size=(num_data, num_step))) * (max_vel - min_vel) + min_vel
+        vel_idx = None
+        if not test and motion_type == 'discrete':
+            velocity = generate_vel_list(max_vel, 1.0)
+            num_vel = len(velocity)
+            if pow(num_vel, num_step) < num_data:
+                vel_list = np.asarray(list(itertools.product(np.arange(num_vel), repeat=num_step)))
+                num_vel_list = len(vel_list)
+
+                div, rem = num_data // num_vel_list, num_data % num_vel_list
+                vel_idx = np.vstack((np.tile(vel_list, [div, 1]), vel_list[np.random.choice(num_vel_list, size=rem)]))
+                np.random.shuffle(vel_idx)
+            else:
+                vel_idx = np.random.choice(num_vel, size=[num_data, num_step])
+
+            vel_grid = np.take(velocity, vel_idx, axis=0)
+            vel = vel_grid * self.interval_length
+
+            vel_grid_cumsum = np.cumsum(vel_grid, axis=1)
+            mu_max = np.fmin(self.num_interval, np.min(self.num_interval - vel_grid_cumsum, axis=1))
+            mu_min = np.fmax(0, np.max(-vel_grid_cumsum, axis=1))
+            mu_start = np.random.sample(size=[num_data, 2])
+            mu_start = np.expand_dims(np.round(mu_start * (mu_max - mu_min) + mu_min - 0.5), axis=1)
+            mu_seq = np.concatenate((mu_start, mu_start + vel_grid_cumsum), axis=1)
+        elif not test:
+            if self.shape == "square":
+                num_data_sample = num_data
+            elif self.shape == "circle":
+                num_data_sample = int(num_data * 1.5)
+            elif self.shape == "triangle":
+                num_data_sample = int(num_data * 4)
+            else:
+                raise NotImplementedError
+
+            theta = np.random.random(size=(num_data_sample, num_step)) * 2 * np.pi - np.pi
+            length = np.sqrt(np.random.random(size=(num_data_sample, num_step))) * (max_vel - min_vel) + min_vel
             x = length * np.cos(theta)
             y = length * np.sin(theta)
             vel_seq = np.concatenate((np.expand_dims(x, axis=-1), np.expand_dims(y, axis=-1)), axis=-1)
@@ -88,16 +112,29 @@ class Data_Generator(object):
             vel_seq_cumsum = np.cumsum(vel_seq, axis=1)
             mu_max = np.fmin(self.num_interval - 1, np.min(self.num_interval - 1 - vel_seq_cumsum, axis=1))
             mu_min = np.fmax(0, np.max(-vel_seq_cumsum, axis=1))
-            start = np.random.random(size=(num_data, 2)) * (mu_max - mu_min) + mu_min
+            start = np.random.random(size=(num_data_sample, 2)) * (mu_max - mu_min) + mu_min
             start = np.expand_dims(start, axis=1)
 
             mu_seq = np.concatenate((start, start + vel_seq), axis=1)
             vel = vel_seq * self.interval_length
+            if self.shape == "circle":
+                mu_seq_len = mu_seq * self.interval_length
+                select_idx = np.sqrt((mu_seq_len[:, :, 0] - 0.5) ** 2 + (mu_seq_len[:, :, 1] - 0.5) ** 2) > 0.5
+                select_idx = np.where(np.sum(select_idx, axis=1) == 0)[0]
+                mu_seq = mu_seq[select_idx[:num_data]]
+                vel = vel[select_idx[:num_data]]
+            elif self.shape == "triangle":
+                mu_seq_len = mu_seq * self.interval_length
+                x, y = mu_seq_len[:, :, 0], mu_seq_len[:, :, 1]
+                select_idx = (x + 2 * y > 1) * (-x + 2 * y < 1)
+                select_idx = np.where(np.sum(select_idx, axis=1) == num_step + 1)[0]
+                mu_seq = mu_seq[select_idx[:num_data]]
+                vel = vel[select_idx[:num_data]]
         else:
             velocity = generate_vel_list(max_vel, min_vel)
             num_vel = len(velocity)
             if visualize:
-                mu_start = np.reshape([4, 4], newshape=(1, 1, 2))
+                mu_start = np.reshape([20, 20], newshape=(1, 1, 2))
                 vel_pool = np.where((velocity[:, 0] >= -1) & (velocity[:, 1] >= -1))
                 vel_idx = np.random.choice(vel_pool[0], size=[num_data * 10, num_step])
 
@@ -132,8 +169,8 @@ class Data_Generator(object):
 
         # sns.distplot(vel, rug=True, hist=False)
         # plt.show()
-
-        place_seq = {'seq': mu_seq, 'vel': vel}
+        assert len(mu_seq) == num_data
+        place_seq = {'seq': mu_seq, 'vel': vel, 'vel_idx': vel_idx}
         return place_seq
 
 

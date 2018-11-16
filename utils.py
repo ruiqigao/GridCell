@@ -41,18 +41,32 @@ def draw_heatmap(data, save_path, xlabels=None, ylabels=None):
     plt.close()
 
 
-def draw_heatmap_2D(data, vmin=None, vmax=None):
-    cmap = cm.get_cmap('rainbow', 1000)
+def shape_mask(size, shape):
+    x, y = np.meshgrid(np.linspace(0, 1, size), np.linspace(0, 1, size))
+    if shape == 'square':
+        mask = np.ones_like(x, dtype=bool)
+    elif shape == 'circle':
+        mask = np.sqrt((x - 0.5) ** 2 + (y - 0.5) ** 2) <= 0.5
+    elif shape == 'triangle':
+        mask = (y + 2 * x >= 1) * (-y + 2 * x <= 1)
+    else:
+        raise NotImplementedError
 
+    return mask
+
+
+def draw_heatmap_2D(data, vmin=None, vmax=None, shape='square'):
+    place_size, _ = np.shape(data)
+    place_mask = shape_mask(place_size, shape)
     if vmin is None:
-        vmax = data[0][0]
-        vmin = data[0][0]
-        for i in data:
-            for j in i:
-                if j > vmax:
-                    vmax = j
-                if j < vmin:
-                    vmin = j
+        vmin = data[place_mask].min() - 0.01
+    if vmax is None:
+        vmax = data[place_mask].max()
+    data[~place_mask] = vmin - 1
+
+    cmap = cm.get_cmap('rainbow', 1000)
+    cmap.set_under('w')
+
     plt.imshow(data, interpolation='nearest', cmap=cmap, aspect='auto', vmin=vmin, vmax=vmax)
     plt.axis('off')
 
