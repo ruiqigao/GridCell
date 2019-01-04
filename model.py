@@ -17,10 +17,10 @@ class GridCell(object):
         assert self.num_interval * self.num_interval == self.place_dim
         self.shape = FLAGS.shape
 
-        # self.max_vel2 = np.sqrt(1.5 / FLAGS.alpha) * (self.num_interval - 1) if self.single_block else FLAGS.max_vel2
-        self.max_vel2 = FLAGS.max_vel2
+        self.max_vel2 = np.sqrt(1.5 / FLAGS.alpha) * (self.num_interval - 1) if self.single_block else FLAGS.max_vel2
+        # self.max_vel2 = FLAGS.max_vel2
         self.min_vel2 = FLAGS.min_vel2
-        self.velocity2 = generate_vel_list(self.max_vel2, 1.0)
+        self.velocity2 = generate_vel_list(self.max_vel2)
         self.num_vel2 = len(self.velocity2)
         self.lamda2 = FLAGS.lamda2
         self.lamda3 = FLAGS.lamda3
@@ -35,12 +35,12 @@ class GridCell(object):
         A_initial = np.random.normal(scale=0.001, size=[self.num_interval, self.num_interval, self.grid_cell_dim])
         self.weights_A = tf.get_variable('A', initializer=tf.convert_to_tensor(A_initial, dtype=tf.float32))
         if self.motion_type == 'discrete':
-            self.weights_M = construct_block_diagonal_weights(self.num_vel2, self.num_group, self.block_size)
+            self.weights_M = construct_block_diagonal_weights(num_channel=self.num_vel2, num_block=self.num_group, block_size=self.block_size)
         # initialized alpha weights
         if self.single_block:
             self.alpha = tf.convert_to_tensor([FLAGS.alpha], dtype=tf.float32)
         else:
-            alpha_initial = np.random.random(size=[self.num_group]) * 120.0
+            alpha_initial = np.random.random(size=[self.num_group]) * 110.0
             # alpha_initial = np.random.normal(scale=0.001, size=[self.num_group])
             self.alpha = tf.get_variable('alpha', initializer=tf.convert_to_tensor(alpha_initial, dtype=tf.float32))
 
@@ -101,6 +101,7 @@ class GridCell(object):
             self.loss = self.loss2 + self.loss3 + self.reg
         else:
             self.loss = self.loss1 + self.loss2 + self.reg + self.loss3
+            # self.loss = self.loss3
         self.loss_mean, self.loss_update = tf.contrib.metrics.streaming_mean(self.loss)
 
         # optim = tf.train.MomentumOptimizer(self.lr, 0.9)

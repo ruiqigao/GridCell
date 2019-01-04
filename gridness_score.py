@@ -13,10 +13,11 @@ weights = np.load(weights_file)
 weights = np.transpose(weights, axes=[2, 0, 1])
 weights = np.clip(weights, a_min=0.0, a_max=weights.max())
 score_list = np.zeros(shape=[len(weights)], dtype=np.float32)
+scale_list = np.zeros(shape=[len(weights)], dtype=np.float32)
+orientation_list = np.zeros(shape=[len(weights)], dtype=np.float32)
 ncol, nrow = block_size, num_block
 plt.figure(figsize=(int(ncol * 2), int(nrow * 1.6)))
 
-scale_list, orientation_list = [], []
 for i in range(len(weights)):
     rate_map = weights[i]
     rate_map = (rate_map - rate_map.min()) / (rate_map.max() - rate_map.min())
@@ -37,28 +38,42 @@ for i in range(len(weights)):
         plt.title('%.2f' % score, color='red')
     else:
         plt.title('%.2f, %.2f, %.2f' % (score, scale, orientation), color='black')
-        scale_list.append(scale)
-        orientation_list.append(orientation)
     plt.subplots_adjust(wspace=1, hspace=0.5)
 
     score_list[i] = score
+    scale_list[i] = scale
+    orientation_list[i] = orientation
 plt.savefig(os.path.join(output_dir, 'autoCorr.png'))
 print(score_list)
 print(np.sum(score_list > 0.0))
 
 # plot histogram of scale
-scale_list = np.asarray(scale_list)
 plt.figure()
-plt.hist(scale_list, bins=15)
+plt.hist(scale_list[score_list > 0.0], bins=15)
 plt.xlabel('Grid scale')
 plt.ylabel('Frequency')
 plt.savefig('scale_hist.png')
 
 # plot histogram of orientation
-orientation_list = np.asarray(orientation_list)
 plt.figure()
-plt.hist(orientation_list, bins=10)
+plt.hist(orientation_list[score_list > 0.0], bins=10)
 plt.xlabel('Grid orientation')
 plt.ylabel('Frequency')
 plt.savefig('orientation_hist.png')
+
+# make the scatter plot
+scale_list = np.reshape(scale_list, [num_block, block_size])
+score_list = np.reshape(score_list, [num_block, block_size])
+select_idx = np.where(np.sum(score_list < 0.0, axis=1) == 0)[0]
+scale_avg = np.mean(scale_list[select_idx], axis=1)
+alpha = np.array([3.9414601, 4.6574736, 11.874706, 16.970573, 17.36293, 35.70909, 39.14808, 39.710724, 44.097527,
+                  56.250626, 57.031147, 61.706524, 73.04434, 85.69689, 87.490715, 94.69994])
+alpha = alpha[select_idx]
+plt.figure()
+plt.scatter(1.0/np.sqrt(alpha), scale_avg)
+plt.xlabel(r'Learned $1/\sqrt{\alpha_k}$')
+plt.ylabel('Grid scale')
+#plt.xlim((0.005, 0.06))
+#plt.ylim((0.25, 0.8))
+plt.savefig('scatter.png')
 

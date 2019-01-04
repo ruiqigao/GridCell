@@ -44,7 +44,7 @@ parser.add_argument('--iter', type=int, default=0, help='Number of iter')
 parser.add_argument('--lamda', type=float, default=0.1, help='Hyper parameter to balance two loss terms')
 parser.add_argument('--GandE', type=float, default=1.0, help='Hyper parameter to balance two loss terms')
 parser.add_argument('--lamda2', type=float, default=5000, help='Hyper parameter to balance two loss terms')
-parser.add_argument('--lamda3', type=float, default=8.0, help='Hyper parameter to balance two loss terms')
+parser.add_argument('--lamda3', type=float, default=9.0, help='Hyper parameter to balance two loss terms')
 parser.add_argument('--motion_type', type=str, default='continuous', help='True if in testing mode')
 parser.add_argument('--num_step', type=int, default=1, help='Number of steps in path integral')
 parser.add_argument('--save_memory', type=bool, default=False, help='True if in testing mode')
@@ -64,7 +64,7 @@ parser.add_argument('--mode', type=str, default='0', help='0: training / 1: visu
 parser.add_argument('--test_num', type=int, default=5, help='Number of testing steps used in path integral')
 parser.add_argument('--project_to_point', type=bool, default=False, help='True if in testing path integral mode')
 parser.add_argument('--ckpt', type=str, default='model.ckpt-5999', help='Checkpoint path to load')
-parser.add_argument('--gpu', type=str, default='0', help='Which gpu to use')
+parser.add_argument('--gpu', type=str, default='1', help='Which gpu to use')
 
 FLAGS = parser.parse_args()
 

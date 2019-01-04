@@ -208,12 +208,12 @@ def mu_to_map(mu, num_interval):
     return map
 
 
-def generate_vel_list(max_vel, min_vel):
+def generate_vel_list(max_vel, min_vel=0.0, interval=1.0):
     vel_list = []
     max_vel_int = int(np.ceil(max_vel) + 1)
-    for i in range(0, max_vel_int):
-        for j in range(0, max_vel_int):
-            if np.sqrt(i ** 2 + j ** 2) <= max_vel and np.sqrt(i ** 2 + j ** 2) >= min_vel:
+    for i in np.arange(0, max_vel_int, interval):
+        for j in np.arange(0, max_vel_int, interval):
+            if (np.sqrt(i ** 2 + j ** 2) <= max_vel) and (np.sqrt(i ** 2 + j ** 2) > min_vel):
                 vel_list.append(np.array([i, j]))
                 if i > 0:
                     vel_list.append(np.array([-i, j]))

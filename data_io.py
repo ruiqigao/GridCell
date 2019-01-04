@@ -72,7 +72,7 @@ class Data_Generator(object):
         """sample discretized motions and corresponding place pairs"""
         vel_idx = None
         if not test and motion_type == 'discrete':
-            velocity = generate_vel_list(max_vel, 1.0)
+            velocity = generate_vel_list(max_vel)
             num_vel = len(velocity)
             if pow(num_vel, num_step) < num_data:
                 vel_list = np.asarray(list(itertools.product(np.arange(num_vel), repeat=num_step)))
@@ -90,8 +90,9 @@ class Data_Generator(object):
             vel_grid_cumsum = np.cumsum(vel_grid, axis=1)
             mu_max = np.fmin(self.num_interval, np.min(self.num_interval - vel_grid_cumsum, axis=1))
             mu_min = np.fmax(0, np.max(-vel_grid_cumsum, axis=1))
-            mu_start = np.random.sample(size=[num_data, 2])
-            mu_start = np.expand_dims(np.round(mu_start * (mu_max - mu_min) + mu_min - 0.5), axis=1)
+            mu_start = np.expand_dims(np.random.random(size=(num_data, 2)) * (mu_max - 1 - mu_min) + mu_min, axis=1)
+            # mu_start = np.random.sample(size=[num_data, 2])
+            # mu_start = np.expand_dims(np.round(mu_start * (mu_max - mu_min) + mu_min - 0.5), axis=1)
             mu_seq = np.concatenate((mu_start, mu_start + vel_grid_cumsum), axis=1)
         elif not test:
             if self.shape == "square":

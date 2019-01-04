@@ -6,7 +6,7 @@ import tensorflow as tf
 import numpy as np
 
 
-def construct_block_diagonal_weights(num_channel, num_block, block_size, init_method='normal'):
+def construct_block_diagonal_weights(num_channel, num_block, block_size):
     M = tf.Variable(tf.truncated_normal([num_block, num_channel, block_size, block_size], stddev=0.01))
     return block_diagonal(M)
 

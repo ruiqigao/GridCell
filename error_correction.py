@@ -3,7 +3,7 @@ import numpy as np
 import os
 import argparse
 import math
-from gridcell_multidir import GridCell_multidir
+from model import GridCell
 from custom_ops import block_diagonal
 from data_io import Data_Generator
 from matplotlib import pyplot as plt
@@ -328,6 +328,8 @@ def main(_):
     parser.add_argument('--num_step', type=int, default=1, help='Number of steps in path integral')
     parser.add_argument('--GandE', type=float, default=1.0, help='Hyper parameter to balance two loss terms')
     parser.add_argument('--save_memory', type=bool, default=False, help='True if in testing mode')
+    parser.add_argument('--shape', type=str, default='square', help='Shape of the area')
+    parser.add_argument('--lamda3', type=float, default=9.0, help='Hyper parameter to balance two loss terms')
 
     # error correction parameter
     parser.add_argument('--test_type', type=str, default='normal', help='Maximum number of steps')
@@ -341,13 +343,17 @@ def main(_):
     # integral parameter
     parser.add_argument('--integral_step', type=int, default=30, help='Number of steps in path integral')
 
+    # parameters for single block tuning
+    parser.add_argument('--single_block', type=bool, default=False, help='True if in testing mode')
+    parser.add_argument('--alpha', type=float, default=72.0, help='scale parameter used in single block scenario')
+
     # planning parameters
     parser.add_argument('--max_step', type=int, default=40, help='Maximum number of steps')
     parser.add_argument('--max_err', type=float, default=None, help='')
     parser.add_argument('--planning_step', type=int, default=1, help='Maximum number of steps')
 
     # utils
-    parser.add_argument('--output_dir', type=str, default='con_G_s0.08_max40,3_t1_rg1',
+    parser.add_argument('--output_dir', type=str, default='./output/con_G_s0.08_max40,3_t1_rg1',
                         help='Checkpoint path to load')
     parser.add_argument('--ckpt', type=str, default='model.ckpt-5999', help='Checkpoint path to load')
     parser.add_argument('--M_file', type=str, default='M.npy', help='Estimated M DILE')
@@ -359,7 +365,7 @@ def main(_):
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = FLAGS.gpu
 
-    model = GridCell_multidir(FLAGS)
+    model = GridCell(FLAGS)
     error_correction_model = Error_correction(model)
 
     test_dir = os.path.join(FLAGS.output_dir, FLAGS.test_dir_name)
